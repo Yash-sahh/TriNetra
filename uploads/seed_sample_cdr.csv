@@ -1,0 +1,4 @@
+caller_number,receiver_number,date,time,duration_sec,tower_location
+9876543210,9123456789,2026-01-10,14:30,120,Tower_A
+9876543210,8765432109,2026-01-11,09:15,45,Tower_B
+9123456789,8765432109,2026-01-12,18:45,300,Tower_A

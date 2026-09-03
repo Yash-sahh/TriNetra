@@ -1,0 +1,164 @@
+# TriNetra
+
+**Explainable Multilingual Criminal Intelligence Graph for Evidence-Backed Investigation**
+
+TriNetra is an SIH-style full-stack prototype for authorized investigators. It uses entirely synthetic records and presents reviewable, evidence-linked analytical leads. It does not determine guilt, prove identity, or recommend arrest, punishment, or surveillance.
+
+> **DEMO DATA — SYNTHETIC INVESTIGATION ENVIRONMENT.** Human verification is required before acting on any lead.
+
+## Quick Start
+
+### Local Development (Zero-Setup SQLite Mode)
+
+Backend (FastAPI):
+```bash
+cd backend
+.venv\Scripts\activate   # on Windows (or source .venv/bin/activate on Linux/Mac)
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+Frontend (Vite + React):
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) (development) or [http://localhost:8000](http://localhost:8000) (when frontend is built). API documentation is at [http://localhost:8000/docs](http://localhost:8000/docs) and health check is at [http://localhost:8000/api/health](http://localhost:8000/api/health).
+
+### Docker Runtime (Optional)
+
+With Docker Desktop running:
+```bash
+docker compose up --build
+```
+Open [http://localhost:8080](http://localhost:8080).
+
+---
+
+## Demo Accounts
+
+All accounts use `TriNetraDemo!2026` by default (configurable via `DEMO_PASSWORD` in `.env`):
+
+| Role | Email | Capabilities |
+|---|---|---|
+| **ADMIN** | `admin@example.com` | Full system access, audit logs, user management, case archiving |
+| **SUPERVISOR** | `supervisor@example.com` | Case creation, editing, entity match decisions, reports |
+| **INVESTIGATOR** | `investigator@example.com` | Case creation, document upload, extraction, copilot |
+| **ANALYST** | `analyst@example.com` | Analytics run, report generation, read access |
+| **VIEWER** | `viewer@example.com` | Read-only inspection of assigned cases |
+
+The UI includes one-click demo credential pills on the sign-in screen and a quick role switcher in the top bar to easily demonstrate role-based access control.
+
+---
+
+## Core Capabilities & Architecture
+
+1. **Case Workspace & Evidence-First Inspector**:
+   - Case summary with active priority and status badges.
+   - Interactive Cytoscape network graph (blue=Person, purple=Phone, orange=Vehicle, green=BankAccount, cyan=Location, pink=Organization, red=CrimeEvent).
+   - Relationship origin distinction: solid lines for **OBSERVED** facts, dashed amber lines for **INFERRED** leads.
+   - Detail panel exposes source entity, target entity, relationship type, confidence, verification status, evidence type, source document reference, observed timestamp, frequency, amount, explanation, and caveats.
+
+2. **Graph Explorer & Multi-Hop Path Finder**:
+   - Filter by entity search query, entity type, and minimum confidence threshold.
+   - Zoom in, zoom out, fit to screen controls.
+   - Multi-Hop Path Finder: select source and target entities to trace connecting analytical relationship paths across the case scope.
+
+3. **Entity Explorer**:
+   - Comprehensive registry of entities with search and type filters.
+   - Direct navigation from entity table into Case Workspace inspector.
+
+4. **Human-in-the-Loop Entity Resolution (Identity Matches)**:
+   - Evaluates potential duplicate records across the case (e.g. shared phone association, name token overlap).
+   - Match categories: `CONFIRMED`, `PROBABLE`, `POSSIBLE`, `UNRESOLVED`.
+   - Explicitly separates matching fields, conflicting fields, missing fields, and supporting evidence.
+   - Actionable review: **Confirm**, **Reject**, **Mark Uncertain**, and **Undo** decisions are audited and reversible. Entities are never automatically merged.
+
+5. **Chronological Investigation Timeline**:
+   - Time-sequenced stream of synthetic calls, money transfers, location visits, vehicle usages, and FIR crime events.
+   - Filter by event type and search query.
+
+6. **Explainable Analytics & Investigation Priority Score**:
+   - Real temporal activity bar chart aggregated from timestamped records.
+   - Explainable composite **Investigation Priority Score** (0-100):
+     - Network Position (30%)
+     - Cross-Community Bridge Connections (25%)
+     - Temporal Interaction Frequency (20%)
+     - Evidence Quality (15%)
+     - Data Completeness (10%)
+   - Methodology breakdown and Responsible AI guardrails.
+
+7. **Actionable Pattern Alerts & Data-Gap Finder**:
+   - Alerts with severity, confidence, rationales, linked evidence references, limitations, and recommended verification actions.
+   - Investigation data-gap finder highlighting missing subscriber verifications or unconfirmed identifiers.
+
+8. **Grounded Investigator Copilot**:
+   - Evidence-grounded deterministic analysis engine (no external paid LLM required).
+   - Multi-hop traversal (e.g., 2-hop search from vehicles or phones).
+   - Entity priority decomposition (explains why an individual lead is flagged).
+   - Multilingual support (summarizes in Hindi / Hinglish).
+   - Financial flow summaries and data-gap audits.
+   - Every answer cites evidence sources, confidence, and explicit data limitations.
+
+9. **Document Center & File Ingestion**:
+   - Drag-and-drop file ingestion for TXT, CSV, JSON, PDF, DOCX, and images (<10 MB).
+   - Safe sanitized filenames, MIME type verification, and SHA-256 idempotency.
+   - Deterministic entity extraction trigger with extracted entity counts.
+
+10. **Printable Analytical Dossiers & Reports**:
+    - Generates complete analytical intelligence dossier with case scope, priority entities table, pattern alerts, data gaps, evidence sample, document inventory with checksums, and investigator sign-off block.
+    - Print-optimized CSS (`@media print`) allows instant "Print to PDF" from the browser.
+
+11. **System Audit Trail**:
+    - Admin-restricted audit log recording all user actions (logins, logouts, case accesses, match decisions, report downloads, file uploads, copilot queries).
+
+---
+
+## Security & Privacy Controls
+
+- **Password Hashing**: Argon2id primary hash with PBKDF2 backward compatibility.
+- **JWT Expiration**: 8-hour expiration tokens with HS256 signature verification.
+- **Role-Based Access Control**: Strict endpoint decorators (`require("ADMIN", ...)`) and UI-level disabled states.
+- **Case Isolation**: `CaseAccess` mapping prevents unauthorized investigators from viewing private cases.
+- **File Validation**: MIME verification, extension whitelist, 10MB size limits, path normalization, and SHA-256 deduplication.
+- **SQL & Query Safety**: All queries parameterized via SQLAlchemy ORM; no arbitrary SQL or Cypher from user inputs.
+
+---
+
+## Testing & Verification
+
+Run backend test suite (14 tests covering auth, RBAC, isolation, graph, timeline, copilot, analytics, reports):
+```bash
+cd backend
+.venv\Scripts\python -m pytest -v
+```
+
+Run end-to-end verification script:
+```bash
+cd backend
+.venv\Scripts\python verify_runtime.py
+```
+
+Run frontend unit tests:
+```bash
+cd frontend
+npm run test
+```
+
+Build production frontend:
+```bash
+cd frontend
+npm run build
+```
+
+---
+
+## Responsible AI Limitations
+
+- A relationship does not establish criminal involvement.
+- Similar names do not prove identity; the demo never automatically merges candidates.
+- Confidence reflects source corroboration, not legal certainty.
+- All records in this demo environment are synthetic.
+- Authorized human review is required before acting on any lead.
