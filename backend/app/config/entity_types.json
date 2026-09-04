@@ -1,0 +1,16 @@
+{
+  "entity_types": {
+    "Person": {"label": "PERSON", "review_threshold": 0.85},
+    "Location": {"label": "LOCATION", "review_threshold": 0.85},
+    "Phone": {"label": "PHONE", "review_threshold": 0.85},
+    "Vehicle": {"label": "VEHICLE", "review_threshold": 0.85},
+    "DateTime": {"label": "DATE_TIME", "review_threshold": 0.85},
+    "Amount": {"label": "AMOUNT", "review_threshold": 0.85},
+    "Organization": {"label": "ORGANIZATION", "review_threshold": 0.85}
+  },
+  "relationship_types": [
+    "ASSOCIATED_WITH", "LOCATED_AT", "MET", "CALLED",
+    "TRANSFERRED_MONEY", "VISITED", "FOLLOWS"
+  ],
+  "languages": ["en", "hi", "hinglish"]
+}

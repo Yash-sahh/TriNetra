@@ -18,8 +18,15 @@ class LocalGraphRepository(GraphRepository):
     def __init__(self, session: Session, entity_model: Any, relation_model: Any, serializer: Any):
         self.session, self.Entity, self.Relation, self.serialize = session, entity_model, relation_model, serializer
     def graph_for_case(self, case_id: str, min_confidence: float = 0) -> dict[str, list[dict[str, Any]]]:
+        nodes = []
+        for entity in self.session.scalars(select(self.Entity).where(self.Entity.case_id == case_id)).all():
+            node = self.serialize(entity)
+            # Keep the API graph-friendly and backwards compatible with the
+            # UI/test contract while retaining canonical_name for inspectors.
+            node["label"] = entity.canonical_name
+            nodes.append(node)
         return {
-            "nodes": [self.serialize(x) for x in self.session.scalars(select(self.Entity).where(self.Entity.case_id == case_id)).all()],
+            "nodes": nodes,
             "edges": [self.serialize(x) for x in self.session.scalars(select(self.Relation).where(self.Relation.case_id == case_id, self.Relation.confidence >= min_confidence)).all()],
         }
 
@@ -37,4 +44,6 @@ class Neo4jGraphRepository(GraphRepository):
             for key in ("a","b"):
                 node=dict(record[key]); nodes[node["id"]]=node
             edges.append(dict(record["r"]))
+        for node in nodes.values():
+            node.setdefault("label", node.get("canonical_name", node.get("id", "Entity")))
         return {"nodes":list(nodes.values()),"edges":edges}

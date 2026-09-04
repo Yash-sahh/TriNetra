@@ -1464,6 +1464,8 @@ function DocumentsView({
   addToast: (msg: string, typ?: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [extractedEntities, setExtractedEntities] = useState<Item[]>([]);
+  const [selectedDocument, setSelectedDocument] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canUpload = ['ADMIN', 'SUPERVISOR', 'INVESTIGATOR'].includes(userRole);
 
@@ -1515,6 +1517,18 @@ function DocumentsView({
       addToast(e.message, 'error');
     }
   };
+
+  const inspectExtraction = async (doc: Item) => {
+    try {
+      const res = await api(`/documents/${doc.id}/content`, token);
+      setSelectedDocument(doc.filename);
+      setExtractedEntities(res.entities || []);
+    } catch (e: any) {
+      addToast(e.message, 'error');
+    }
+  };
+
+  const confidenceKind = (confidence: number) => confidence >= 0.8 ? 'green' : confidence >= 0.5 ? 'amber' : 'red';
 
   return (
     <>
@@ -1574,11 +1588,34 @@ function DocumentsView({
                   Extract Entities
                 </button>
               )}
+              <button className="btn-small btn-secondary" onClick={() => inspectExtraction(d)}>
+                Inspect extraction
+              </button>
             </span>
           </div>
         ))}
         {!docs.length && <p className="empty">No documents in this case repository.</p>}
       </article>
+      {!!selectedDocument && (
+        <article className="table" style={{ marginTop: 18 }}>
+          <div style={{ padding: '14px 16px' }}>
+            <b>Extraction provenance: {selectedDocument}</b>
+            <p className="muted">Source snippet, language, method, and confidence are shown for human verification.</p>
+          </div>
+          <div className="row head">
+            <span>Entity</span><span>Confidence / Language</span><span>Method</span><span>Source text</span>
+          </div>
+          {extractedEntities.map((entity) => (
+            <div className="row" key={entity.id}>
+              <span><b>{entity.canonical_name}</b> <Badge kind="neutral">{entity.entity_type}</Badge></span>
+              <span><Badge kind={confidenceKind(entity.confidence || 0)}>{Math.round((entity.confidence || 0) * 100)}%</Badge> {entity.language || 'en'}</span>
+              <span>{entity.extraction_method || 'legacy record'}</span>
+              <span title={entity.source_text_span}>{entity.source_text_span || 'No source span retained'}</span>
+            </div>
+          ))}
+          {!extractedEntities.length && <p className="empty">No entities were extracted from this document.</p>}
+        </article>
+      )}
     </>
   );
 }

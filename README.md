@@ -106,6 +106,7 @@ The UI includes one-click demo credential pills on the sign-in screen and a quic
    - Drag-and-drop file ingestion for TXT, CSV, JSON, PDF, DOCX, and images (<10 MB).
    - Safe sanitized filenames, MIME type verification, and SHA-256 idempotency.
    - Deterministic entity extraction trigger with extracted entity counts.
+   - Extraction provenance inspector with source snippet, language, method, and green/amber/red confidence badge for every persisted entity.
 
 10. **Printable Analytical Dossiers & Reports**:
     - Generates complete analytical intelligence dossier with case scope, priority entities table, pattern alerts, data gaps, evidence sample, document inventory with checksums, and investigator sign-off block.
@@ -152,6 +153,27 @@ Build production frontend:
 cd frontend
 npm run build
 ```
+
+---
+
+## Unstructured NLP Pipeline
+
+The zero-setup extraction pipeline processes FIRs/police narratives, CDR CSVs, bank-transfer CSVs, surveillance notes, and social-media JSON. It uses deterministic regex and context rules (with optional OCR) rather than a hosted model.
+
+- **Entities:** Person, Location, Phone, Vehicle, Date/Time, Amount, Organization, Bank Account, and FIR crime event.
+- **Relationships:** ASSOCIATED_WITH, LOCATED_AT, MET, CALLED, TRANSFERRED_MONEY_TO, VISITED, FOLLOWS, and evidence-linked phone/vehicle associations.
+- **Languages:** English, Hindi (Devanagari), and Hinglish. The detected document language and each extracted entity's language are retained.
+- **Reviewability:** Each extracted entity retains confidence, method, source snippet and character offsets, and a verification flag. Entity resolution only proposes merge candidates—nothing is auto-merged.
+
+Sample data is in [`seed/`](seed): `sample_fir.txt`, `sample_fir_hindi.txt`, `sample_cdr.csv`, `sample_transactions.csv`, `sample_surveillance.txt`, and `test_unseen_fir.txt`. The latter is a different Case Diary layout used to check basic generalization.
+
+### OCR
+
+Text, CSV, and JSON files work without additional dependencies. Image OCR is optional: install Tesseract plus its Hindi language data, then install `pytesseract` and Pillow in the backend environment. When unavailable, the service returns a clear review notice instead of failing ingestion. PDF text extraction is attempted when `pypdf` is installed; scanned PDFs also need OCR support.
+
+### Known NLP Limits
+
+The demo is intentionally deterministic and conservative. It does not resolve ambiguous names, infer identity from a phone number, or reliably extract every free-form address, nickname, or table layout. OCR quality depends on scan quality and installed Hindi assets. All outputs are investigative leads requiring human verification.
 
 ---
 

@@ -164,6 +164,11 @@ class DocumentProcessingPipeline:
                     source_document_id=document_id,
                     source_page=ent_data.get("source_page", 1),
                     source_text_span=str(ent_data.get("source_text", raw_val))[:200],
+                    extraction_method=ent_data.get("extraction_method", "RULE_BASED"),
+                    source_start_char=ent_data.get("source_start_char", 0),
+                    source_end_char=ent_data.get("source_end_char", 0),
+                    language=ent_data.get("language", detected_lang),
+                    requires_verification=ent_data.get("requires_verification", conf < 0.85),
                     created_at=datetime.now(timezone.utc),
                 )
                 db_session.add(db_ent)
@@ -216,6 +221,7 @@ class DocumentProcessingPipeline:
             new_relations_count += 1
 
         doc.processing_status = "COMPLETED"
+        doc.language = detected_lang
         db_session.commit()
 
         return {

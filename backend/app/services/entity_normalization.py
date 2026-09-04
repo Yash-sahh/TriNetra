@@ -47,7 +47,9 @@ class EntityNormalizationService:
         """Parses currency strings into raw float INR numbers."""
         clean = raw.replace(",", "").replace("₹", "").replace("Rs", "").replace("रु", "").strip()
         multiplier = 1.0
-        if re.search(r"\b(?:k|thousand|हजार)\b", clean, re.I):
+        # In compact values such as ``50K`` the digit and K are both word
+        # characters, so a leading word-boundary would not match.
+        if re.search(r"(?:\d\s*[kK]\b|\b(?:thousand|हजार)\b)", clean, re.I):
             multiplier = 1000.0
             clean = re.sub(r"[kK]|thousand|हजार", "", clean, flags=re.I).strip()
         elif re.search(r"\b(?:lakh|lakhs|लाख)\b", clean, re.I):

@@ -24,7 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, create_engine, inspect, select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 from .graph_repository import LocalGraphRepository
 from .services import DocumentProcessingPipeline, EntityNormalizationService, NLPExtractionService, OCRService
@@ -112,6 +112,13 @@ class Entity(Base):
     source_document_id: Mapped[str | None] = mapped_column(String, nullable=True)
     source_page: Mapped[int] = mapped_column(Integer, default=1)
     source_text_span: Mapped[str] = mapped_column(String, default="demo seed")
+    # Provenance is retained so an investigator can inspect and correct each
+    # machine-extracted lead rather than treating it as an unexplained fact.
+    extraction_method: Mapped[str] = mapped_column(String, default="MANUAL")
+    source_start_char: Mapped[int] = mapped_column(Integer, default=0)
+    source_end_char: Mapped[int] = mapped_column(Integer, default=0)
+    language: Mapped[str] = mapped_column(String, default="en")
+    requires_verification: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 class Relation(Base):
@@ -560,8 +567,32 @@ class EntityUpdate(BaseModel):
     entity_type: str | None = None
     verification_status: str | None = None
 
+def ensure_provenance_columns() -> None:
+    """Apply the small additive SQLite migration used by the zero-setup demo.
+
+    Alembic deployments create these columns from the ORM metadata. Existing
+    local demo databases predate the NLP provenance fields, so add them here
+    without dropping or rewriting any investigator data.
+    """
+    inspector = inspect(engine)
+    if "entities" not in inspector.get_table_names():
+        return
+    existing = {column["name"] for column in inspector.get_columns("entities")}
+    additions = {
+        "extraction_method": "VARCHAR NOT NULL DEFAULT 'MANUAL'",
+        "source_start_char": "INTEGER NOT NULL DEFAULT 0",
+        "source_end_char": "INTEGER NOT NULL DEFAULT 0",
+        "language": "VARCHAR NOT NULL DEFAULT 'en'",
+        "requires_verification": "BOOLEAN NOT NULL DEFAULT 1",
+    }
+    with engine.begin() as conn:
+        for column, definition in additions.items():
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE entities ADD COLUMN {column} {definition}"))
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    ensure_provenance_columns()
     Base.metadata.create_all(engine)
     seed(SessionLocal())
     yield
@@ -591,6 +622,7 @@ async def secure_headers(request: Request, call_next):
     return response
 
 # Also initialize eagerly so test clients without async lifespan work reliably
+ensure_provenance_columns()
 Base.metadata.create_all(engine)
 seed(SessionLocal())
 
@@ -699,7 +731,20 @@ async def upload(case_id: str, file: UploadFile = File(...), u: User = Depends(r
     checksum = hashlib.sha256(data).hexdigest()
     existing = s.scalar(select(Document).where(Document.checksum == checksum))
     if existing:
-        return {"document": public(existing), "idempotent": True, "message": "This exact file was already processed."}
+        existing_entities = s.scalars(select(Entity).where(Entity.source_document_id == existing.id)).all()
+        existing_relations = s.scalars(select(Relation).where(Relation.source_document_id == existing.id)).all()
+        return {
+            "document": public(existing),
+            "idempotent": True,
+            "message": "This exact file was already processed.",
+            # Keep retry clients on the same response contract as a new upload.
+            "entities_extracted": len(existing_entities),
+            "relationships_extracted": len(existing_relations),
+            "parser_used": "Previously processed document",
+            "language": existing.language,
+            "patterns_detected": [],
+            "extraction_notice": "Showing the persisted deterministic extraction; verify before operational use.",
+        }
     key = f"{uuid.uuid4()}{ext}"
     (UPLOAD_DIR / key).write_bytes(data)
     d = Document(
@@ -820,6 +865,9 @@ def create_manual_entity(case_id: str, body: EntityCreate, u: User = Depends(req
         confidence=body.confidence,
         verification_status=body.verification_status,
         source_text_span=body.source_text_span,
+        extraction_method="MANUAL",
+        language="en",
+        requires_verification=False,
     )
     s.add(ent)
     s.commit()
