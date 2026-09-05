@@ -12,6 +12,8 @@ services:
         value: sqlite
       - key: GRAPH_MODE
         value: local
+      - key: PYTHON_VERSION
+        value: 3.13.4
       - key: JWT_SECRET
         generateValue: true
       - key: DEMO_PASSWORD
