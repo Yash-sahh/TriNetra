@@ -646,6 +646,20 @@ def login(body: Login, request: Request, s: Session = Depends(db)):
     s.commit()
     return {"access_token": token(u), "token_type": "bearer", "user": public(u)}
 
+@app.post("/api/auth/demo-login")
+def demo_login(request: Request, s: Session = Depends(db)):
+    """Provide passwordless access to the intentionally public synthetic demo."""
+    if os.getenv("DEMO_AUTH_ENABLED", "true").lower() != "true":
+        raise HTTPException(403, "Demo access is disabled.")
+    host = request.client.host if request.client else "demo"
+    rate_limit("demo-login", host, 20)
+    u = s.scalar(select(User).where(User.email == "admin@example.com"))
+    if not u or not u.active:
+        raise HTTPException(503, "Demo account is unavailable.")
+    audit(s, u, "DEMO_LOGIN", "Session", u.id, {"synthetic": True})
+    s.commit()
+    return {"access_token": token(u), "token_type": "bearer", "user": public(u)}
+
 @app.get("/api/auth/me")
 def me(u: User = Depends(current)):
     return public(u)

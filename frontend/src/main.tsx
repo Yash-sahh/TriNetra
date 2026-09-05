@@ -123,6 +123,19 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
     }
   };
 
+  const enterDemo = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      const res = await api('/auth/demo-login', undefined, { method: 'POST' });
+      onLogin(res);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const pickDemo = (acc: (typeof DEMO_ACCOUNTS)[0]) => {
     setEmail(acc.email);
     setPassword('TriNetraDemo!2026');
@@ -140,6 +153,13 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
         </div>
         <Badge kind="demo">DEMO DATA — SYNTHETIC ENVIRONMENT</Badge>
         <h2>Authorized investigator sign in</h2>
+        <button type="button" onClick={enterDemo} disabled={busy}>
+          {busy ? 'Opening demo workspace…' : 'Continue without password'}
+        </button>
+        <p className="muted" style={{ fontSize: '11px', marginTop: '8px' }}>
+          Public access is limited to synthetic demo data and the Administrator demo role.
+        </p>
+        <div className="login-divider"><span>or use an account</span></div>
         <form onSubmit={submit}>
           <label>
             Investigator Email
