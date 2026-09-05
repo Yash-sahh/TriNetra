@@ -1046,6 +1046,7 @@ def graph(case_id: str, min_confidence: float = 0, u: User = Depends(current), s
 def graph_path(case_id: str, source: str, target: str, u: User = Depends(current), s: Session = Depends(db)):
     allowed(case_id, u, s)
     es = s.scalars(select(Relation).where(Relation.case_id == case_id)).all()
+    entities = {entity.id: entity for entity in s.scalars(select(Entity).where(Entity.case_id == case_id)).all()}
     adjacency = {}
     edge_map = {}
     for r in es:
@@ -1057,13 +1058,27 @@ def graph_path(case_id: str, source: str, target: str, u: User = Depends(current
     while queue:
         x, path = queue.pop(0)
         if x == target:
-            path_edges = [public(edge_map[rid]) for rid in path if rid in edge_map]
+            path_edges = []
+            for rid in path:
+                relation = edge_map.get(rid)
+                if not relation:
+                    continue
+                edge = public(relation)
+                source_entity = entities.get(relation.source_entity_id)
+                target_entity = entities.get(relation.target_entity_id)
+                edge.update({
+                    "source_entity_name": source_entity.canonical_name if source_entity else "Unknown entity",
+                    "source_entity_type": source_entity.entity_type if source_entity else "Unknown",
+                    "target_entity_name": target_entity.canonical_name if target_entity else "Unknown entity",
+                    "target_entity_type": target_entity.entity_type if target_entity else "Unknown",
+                })
+                path_edges.append(edge)
             return {
                 "edge_ids": path,
                 "edges": path_edges,
                 "requires_verification": True,
                 "length": len(path),
-                "message": f"Found analytical connection path with {len(path)} step(s). Associations require context verification.",
+                "message": f"A {len(path)}-step evidence route connects the selected entities. Review each relationship and verify the underlying source record before drawing conclusions.",
             }
         for nxt, rid in adjacency.get(x, []):
             if nxt not in seen:
@@ -1409,6 +1424,26 @@ def copilot_answer(q: str, case_id: str, s: Session):
             "confidence": 0.80,
             "data_limitations": "Call records do not contain audio intercepts or verified message contents.",
             "suggested_verification_action": "Examine call durations, tower locations, and obtain subscriber verification certificates.",
+        }
+
+    relevant_terms = {
+        "case", "entity", "person", "phone", "call", "cdr", "vehicle", "bank", "account", "money",
+        "transaction", "transfer", "network", "graph", "relationship", "connection", "connected", "path",
+        "alert", "gap", "missing", "evidence", "document", "priority", "lead", "investigation", "investigator",
+        "hindi", "हिंदी", "crime", "fir", "location", "communication", "financial", "quality", "data",
+    }
+    has_entity_reference = any(e.canonical_name.lower() in ql for e in ents)
+    if not (has_entity_reference or any(term in ql for term in relevant_terms)):
+        return {
+            "label": "Unrelated Query",
+            "direct_answer": (
+                "This question does not appear to relate to the current case evidence. "
+                "Ask about entities, relationships, documents, alerts, data gaps, timelines, or analytical paths."
+            ),
+            "evidence_used": [],
+            "confidence": 1.0,
+            "data_limitations": "The assistant answers only from this case's synthetic evidence and cannot answer general questions.",
+            "suggested_verification_action": "Rephrase the question using a case entity, relationship, document, or evidence type.",
         }
 
     direct = (

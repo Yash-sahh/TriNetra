@@ -407,47 +407,69 @@ function GraphComponent({
   graph,
   onSelect,
   highlightEdgeIds = [],
+  highlightNodeIds = [],
   filterType = '',
   minConfidence = 0,
 }: {
   graph: Item;
   onSelect: (x: Item) => void;
   highlightEdgeIds?: string[];
+  highlightNodeIds?: string[];
   filterType?: string;
   minConfidence?: number;
 }) {
   const [query, setQuery] = useState('');
   const cyRef = useRef<any>(null);
+  const panGuardRef = useRef(false);
 
   const els = useMemo(() => {
-    const nodes = (graph.nodes || [])
+    const allNodes = graph.nodes || [];
+    const allEdges = graph.edges || [];
+    const idKey = (value: any) => String(value);
+    const normalizedQuery = query.trim().toLowerCase();
+    const matchingIds = new Set<string>(allNodes
       .filter((n: Item) => {
-        const matchesQuery = n.canonical_name.toLowerCase().includes(query.toLowerCase());
+        const matchesQuery = !normalizedQuery || n.canonical_name.toLowerCase().includes(normalizedQuery);
         const matchesType = !filterType || n.entity_type === filterType;
         return matchesQuery && matchesType;
       })
+      .map((n: Item) => idKey(n.id)));
+    const visibleIds = new Set<string>(matchingIds);
+    if (normalizedQuery) {
+      allEdges.forEach((e: Item) => {
+        const sourceId = idKey(e.source_entity_id);
+        const targetId = idKey(e.target_entity_id);
+        if (matchingIds.has(sourceId)) visibleIds.add(targetId);
+        if (matchingIds.has(targetId)) visibleIds.add(sourceId);
+      });
+    }
+
+    const nodes = allNodes
+      .filter((n: Item) => visibleIds.has(idKey(n.id)))
       .map((n: Item) => ({
         data: {
-          id: n.id,
+          id: idKey(n.id),
           label: n.canonical_name,
           type: n.entity_type,
           raw: n,
+          isSearchMatch: matchingIds.has(idKey(n.id)),
+          isPathNode: highlightNodeIds.map(idKey).includes(idKey(n.id)),
         },
       }));
 
-    const nodeIds = new Set(nodes.map((n: any) => n.data.id));
+    const nodeIds = new Set<string>(nodes.map((n: any) => idKey(n.data.id)));
 
-    const edges = (graph.edges || [])
+    const edges = allEdges
       .filter((e: Item) => {
         const confOk = (e.confidence ?? 0) >= minConfidence;
-        const endpointsExist = nodeIds.has(e.source_entity_id) && nodeIds.has(e.target_entity_id);
+        const endpointsExist = nodeIds.has(idKey(e.source_entity_id)) && nodeIds.has(idKey(e.target_entity_id));
         return confOk && endpointsExist;
       })
       .map((e: Item) => ({
         data: {
-          id: e.id,
-          source: e.source_entity_id,
-          target: e.target_entity_id,
+          id: idKey(e.id),
+          source: idKey(e.source_entity_id),
+          target: idKey(e.target_entity_id),
           label: e.relationship_type,
           origin: e.relationship_origin,
           isHighlighted: highlightEdgeIds.includes(e.id),
@@ -458,9 +480,64 @@ function GraphComponent({
     return [...nodes, ...edges];
   }, [graph, query, filterType, minConfidence, highlightEdgeIds]);
 
+  const searchSummary = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return null;
+
+    const matches = (graph.nodes || []).filter((n: Item) => {
+      const matchesName = n.canonical_name.toLowerCase().includes(normalizedQuery);
+      const matchesType = !filterType || n.entity_type === filterType;
+      return matchesName && matchesType;
+    });
+    if (!matches.length) return { matches: [], connections: [] };
+
+    const matchIds = new Set(matches.map((n: Item) => n.id));
+    const entityById = new Map((graph.nodes || []).map((n: Item) => [n.id, n]));
+    const connections = (graph.edges || [])
+      .filter((e: Item) => {
+        const touchesMatch = matchIds.has(e.source_entity_id) || matchIds.has(e.target_entity_id);
+        return touchesMatch && (e.confidence ?? 0) >= minConfidence;
+      })
+      .map((e: Item) => ({
+        ...e,
+        source: entityById.get(e.source_entity_id),
+        target: entityById.get(e.target_entity_id),
+      }));
+
+    return { matches, connections };
+  }, [graph, query, filterType, minConfidence]);
+
+  const keepGraphInFrame = (cy: any) => {
+    if (panGuardRef.current || !cy?.container() || !cy.nodes().length) return;
+    const container = cy.container();
+    const bounds = cy.nodes().renderedBoundingBox();
+    const padding = 28;
+    let shiftX = 0;
+    let shiftY = 0;
+
+    if (bounds.x2 < padding) shiftX = padding - bounds.x2;
+    if (bounds.x1 > container.clientWidth - padding) shiftX = container.clientWidth - padding - bounds.x1;
+    if (bounds.y2 < padding) shiftY = padding - bounds.y2;
+    if (bounds.y1 > container.clientHeight - padding) shiftY = container.clientHeight - padding - bounds.y1;
+
+    if (shiftX || shiftY) {
+      panGuardRef.current = true;
+      const pan = cy.pan();
+      cy.pan({ x: pan.x + shiftX, y: pan.y + shiftY });
+      panGuardRef.current = false;
+    }
+  };
+
+  const fitGraphToViewport = (cy: any) => {
+    if (!cy || !cy.elements().length) return;
+    cy.fit(cy.elements(), 44);
+    cy.minZoom(cy.zoom());
+    keepGraphInFrame(cy);
+  };
+
   const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.25);
-  const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8);
-  const handleFit = () => cyRef.current?.fit();
+  const handleZoomOut = () => cyRef.current?.zoom(Math.max(cyRef.current.minZoom(), cyRef.current.zoom() * 0.8));
+  const handleFit = () => fitGraphToViewport(cyRef.current);
 
   return (
     <section className="graph-layout" aria-label="Case relationship graph">
@@ -474,6 +551,7 @@ function GraphComponent({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            {query && <span className="search-hint">Matches + direct connections</span>}
           </div>
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
             <button className="btn-secondary btn-small" onClick={handleZoomIn} title="Zoom in">
@@ -496,9 +574,17 @@ function GraphComponent({
           cy={(cy: any) => {
             cyRef.current = cy;
             cy.removeAllListeners();
+            cy.autoungrabify(true);
+            cy.panningEnabled(true);
+            cy.minZoom(0.1);
+            cy.on('layoutstop', () => fitGraphToViewport(cy));
+            cy.on('pan', () => keepGraphInFrame(cy));
+            cy.on('dragfree', 'node', () => keepGraphInFrame(cy));
+            cy.on('zoom', () => keepGraphInFrame(cy));
             cy.on('tap', 'node, edge', (evt: any) => {
               onSelect(evt.target.data('raw'));
             });
+            requestAnimationFrame(() => fitGraphToViewport(cy));
           }}
           stylesheet={[
             {
@@ -512,6 +598,29 @@ function GraphComponent({
                 'text-outline-width': 2,
                 width: 36,
                 height: 36,
+                'border-width': 2,
+                'border-color': '#bfe9ff',
+                'text-wrap': 'wrap',
+                'text-max-width': 100,
+              },
+            },
+            {
+              selector: 'node[?isSearchMatch]',
+              style: {
+                width: 48,
+                height: 48,
+                'border-width': 4,
+                'border-color': '#ffffff',
+                'font-size': '11px',
+                'z-index': 20,
+              },
+            },
+            {
+              selector: 'node[?isPathNode]',
+              style: {
+                'border-width': 4,
+                'border-color': '#00e5ff',
+                'z-index': 30,
               },
             },
             { selector: 'node[type = "Phone"]', style: { 'background-color': '#a855f7' } },
@@ -554,6 +663,50 @@ function GraphComponent({
             },
           ]}
         />
+
+        {searchSummary && (
+          <div className="graph-search-summary" aria-live="polite">
+            {searchSummary.matches.length ? (
+              <>
+                <div className="graph-search-summary-header">
+                  <div>
+                    <span className="eyebrow">TEXT VIEW OF SEARCH</span>
+                    <b>{searchSummary.matches.length} matching {searchSummary.matches.length === 1 ? 'entity' : 'entities'}</b>
+                  </div>
+                  <span className="muted">{searchSummary.connections.length} direct connection{searchSummary.connections.length === 1 ? '' : 's'}</span>
+                </div>
+                {searchSummary.matches.map((match: Item) => (
+                  <div className="graph-search-entity" key={match.id}>
+                    <div className="graph-search-entity-title">
+                      <strong>{match.canonical_name}</strong>
+                      <Badge kind="neutral">{match.entity_type}</Badge>
+                    </div>
+                    <div className="graph-connection-list">
+                      {searchSummary.connections
+                        .filter((e: Item) => e.source_entity_id === match.id || e.target_entity_id === match.id)
+                        .map((e: Item) => {
+                          const other = e.source_entity_id === match.id ? e.target : e.source;
+                          return (
+                            <div className="graph-connection" key={e.id}>
+                              <span className="connection-dot" style={{ background: typeColors[other?.entity_type] || '#64748b' }} />
+                              <b>{other?.canonical_name || 'Unknown entity'}</b>
+                              <span>{e.relationship_type.replaceAll('_', ' ')}</span>
+                              <small>{e.relationship_origin} · {Math.round((e.confidence || 0) * 100)}% confidence</small>
+                            </div>
+                          );
+                        })}
+                      {!searchSummary.connections.some((e: Item) => e.source_entity_id === match.id || e.target_entity_id === match.id) && (
+                        <p className="muted">No connections meet the current confidence filter.</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <p className="muted">No entity matches “{query}”. Try a full or partial name.</p>
+            )}
+          </div>
+        )}
 
         <div className="legend">
           {Object.entries(typeColors).map(([x, c]) => (
@@ -609,6 +762,25 @@ function Workspace({
   }, [selected?.id, token]);
 
   const isEdge = Boolean(selected && selected.relationship_type);
+  const selectedConnections = selected && !isEdge
+    ? (graph.edges || [])
+        .filter((e: Item) => e.source_entity_id === selected.id || e.target_entity_id === selected.id)
+        .map((e: Item) => ({
+          ...e,
+          otherName: e.source_entity_id === selected.id ? e.target_entity_name : e.source_entity_name,
+          otherType: e.source_entity_id === selected.id ? e.target_entity_type : e.source_entity_type,
+        }))
+    : [];
+
+  const entityMeaning: Record<string, string> = {
+    Person: 'A person record extracted from the case evidence.',
+    Phone: 'A phone identifier linked to one or more recorded interactions.',
+    Vehicle: 'A vehicle identifier appearing in the source records.',
+    BankAccount: 'A bank account identifier appearing in synthetic transaction records.',
+    Location: 'A location mentioned or observed in the case records.',
+    Organization: 'An organization named in the case evidence.',
+    CrimeEvent: 'A recorded incident or event from the case documents.',
+  };
 
   return (
     <>
@@ -676,31 +848,68 @@ function Workspace({
                 </>
               ) : (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="entity-inspector-heading">
+                    <div>
+                      <span className="eyebrow">ENTITY EVIDENCE SNAPSHOT</span>
+                      <h2>{selected.canonical_name}</h2>
+                    </div>
                     <Badge kind="neutral">{selected.entity_type}</Badge>
-                    <Badge kind={selected.verification_status === 'VERIFIED' ? 'green' : 'amber'}>
-                      {selected.verification_status}
-                    </Badge>
                   </div>
-                  <h2 style={{ marginTop: '10px' }}>{selected.canonical_name}</h2>
-                  <dl>
-                    <dt>Canonical Value</dt>
-                    <dd>{selected.canonical_name}</dd>
-                    <dt>Normalized ID</dt>
-                    <dd><code>{selected.normalized_value}</code></dd>
-                    <dt>Confidence</dt>
-                    <dd>{Math.round((selected.confidence || 0) * 100)}%</dd>
-                    <dt>Source Text Span</dt>
-                    <dd>{selected.source_text_span || 'synthetic seed'}</dd>
-                    <dt>Source Doc ID</dt>
-                    <dd><code>{selected.source_document_id?.slice(0, 12)}...</code></dd>
-                  </dl>
+                  <div className="entity-status-row">
+                    <Badge kind={selected.verification_status === 'VERIFIED' ? 'green' : 'amber'}>
+                      {selected.verification_status === 'VERIFIED' ? 'VERIFIED RECORD' : 'REQUIRES VERIFICATION'}
+                    </Badge>
+                    <span className="muted">{selectedConnections.length} recorded connection{selectedConnections.length === 1 ? '' : 's'}</span>
+                  </div>
+                  <p className="entity-meaning">{entityMeaning[selected.entity_type] || 'An entity extracted from the case evidence.'}</p>
 
-                  <hr />
-                  <h3>Data Gaps & Corroboration</h3>
-                  <p className="muted" style={{ fontSize: '12px' }}>
-                    Identity matches and leads require official corroboration. Similar names or shared contacts do not prove involvement.
-                  </p>
+                  <div className="entity-facts">
+                    <div>
+                      <small>Evidence confidence</small>
+                      <strong>{Math.round((selected.confidence || 0) * 100)}%</strong>
+                      <div className="confidence-track"><i style={{ width: `${Math.round((selected.confidence || 0) * 100)}%` }} /></div>
+                    </div>
+                    <div>
+                      <small>Source text</small>
+                      <strong>{selected.source_text_span || 'Synthetic seed record'}</strong>
+                    </div>
+                    <div>
+                      <small>Evidence method</small>
+                      <strong>{selected.extraction_method || 'Record extraction'}</strong>
+                    </div>
+                  </div>
+
+                  <h3>Connected Evidence</h3>
+                  {selectedConnections.length ? (
+                    <div className="entity-connections">
+                      {selectedConnections.slice(0, 8).map((connection: Item) => (
+                        <div className="entity-connection" key={connection.id}>
+                          <div>
+                            <b>{connection.otherName || 'Unknown entity'}</b>
+                            <small>{connection.otherType || 'Entity'}</small>
+                          </div>
+                          <span>{connection.relationship_type.replaceAll('_', ' ')}</span>
+                          <small>{connection.relationship_origin} · {Math.round((connection.confidence || 0) * 100)}%</small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="muted">No relationship is currently recorded for this entity.</p>
+                  )}
+
+                  <details className="technical-details">
+                    <summary>View technical identifiers</summary>
+                    <dl>
+                      <dt>Normalized ID</dt>
+                      <dd><code>{selected.normalized_value}</code></dd>
+                      <dt>Source document</dt>
+                      <dd><code>{selected.source_document_id?.slice(0, 12) || 'Not available'}...</code></dd>
+                    </dl>
+                  </details>
+
+                  <div className="investigator-note">
+                    <b>Investigator note:</b> This is an evidence-linked analytical lead, not a conclusion. Confirm identity and context from the original source documents before action.
+                  </div>
                 </>
               )}
             </>
@@ -748,6 +957,12 @@ function GraphView({
   const [searchingPath, setSearchingPath] = useState(false);
 
   const nodes = graph.nodes || [];
+  const observedCount = (graph.edges || []).filter((e: Item) => e.relationship_origin === 'OBSERVED').length;
+  const inferredCount = (graph.edges || []).filter((e: Item) => e.relationship_origin === 'INFERRED').length;
+  const pathNodeIds = useMemo<string[]>(() => {
+    if (!pathResult?.edges?.length) return [];
+    return Array.from(new Set<string>(pathResult.edges.flatMap((e: Item) => [e.source_entity_id, e.target_entity_id])));
+  }, [pathResult]);
 
   const handleFindPath = async () => {
     if (!srcId || !tgtId || srcId === tgtId) {
@@ -781,10 +996,29 @@ function GraphView({
         </div>
       </header>
 
+      <section className="network-purpose" aria-label="Network graph purpose">
+        <div className="network-purpose-copy">
+          <span className="eyebrow">WHAT THIS VIEW DOES</span>
+          <h2>See how evidence records connect</h2>
+          <p>
+            Use the network to inspect who or what is connected inside this case. Select a node to review its evidence, or choose two entities below to trace the shortest relationship route between them.
+          </p>
+        </div>
+        <div className="network-purpose-stats">
+          <div><strong>{nodes.length}</strong><span>entities</span></div>
+          <div><strong>{graph.edges?.length || 0}</strong><span>relationships</span></div>
+          <div><strong>{observedCount}</strong><span>observed</span></div>
+          <div><strong>{inferredCount}</strong><span>inferred leads</span></div>
+        </div>
+      </section>
+
       <div className="path-finder">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <b>Multi-Hop Path Finder</b>
-          <small className="muted">Identify connecting relationship chains</small>
+          <div>
+            <span className="eyebrow">INVESTIGATION TASK</span>
+            <b>Trace how two entities are connected</b>
+          </div>
+          <small className="muted">Select a starting point and destination</small>
         </div>
         <div className="path-finder-controls">
           <select value={srcId} onChange={(e) => setSrcId(e.target.value)}>
@@ -805,7 +1039,7 @@ function GraphView({
             ))}
           </select>
           <button disabled={searchingPath || !srcId || !tgtId} onClick={handleFindPath}>
-            {searchingPath ? 'Tracing…' : 'Find Analytical Path'}
+            {searchingPath ? 'Tracing evidence route…' : 'Trace Evidence Route'}
           </button>
           {pathResult && (
             <button className="btn-secondary btn-small" onClick={() => setPathResult(null)}>
@@ -816,16 +1050,50 @@ function GraphView({
 
         {pathResult && (
           <div className="path-result">
-            <b>{pathResult.message}</b>
+            <div className="path-result-header">
+              <div>
+                <span className="eyebrow">ANALYTICAL ROUTE</span>
+                <b>{pathResult.length ? `${pathResult.length} relationship steps identified` : 'No connecting route identified'}</b>
+              </div>
+              <Badge kind={pathResult.length ? 'blue' : 'neutral'}>{pathResult.length ? 'REVIEW ROUTE' : 'NO PATH'}</Badge>
+            </div>
+            {pathResult.length > 0 && (
+              <div className="route-overview">
+                <div>
+                  <small>START ENTITY</small>
+                  <strong>{nodes.find((n: Item) => n.id === srcId)?.canonical_name || 'Selected source'}</strong>
+                </div>
+                <span className="route-arrow">→</span>
+                <div>
+                  <small>DESTINATION ENTITY</small>
+                  <strong>{nodes.find((n: Item) => n.id === tgtId)?.canonical_name || 'Selected target'}</strong>
+                </div>
+              </div>
+            )}
+            {pathResult.length > 0 && (
+              <div className="route-stats">
+                <span><b>{pathResult.edges.filter((e: Item) => e.relationship_origin === 'OBSERVED').length}</b> observed records</span>
+                <span><b>{pathResult.edges.filter((e: Item) => e.relationship_origin === 'INFERRED').length}</b> inferred leads</span>
+                <span><b>{pathResult.edges.filter((e: Item) => e.requires_verification).length}</b> require verification</span>
+              </div>
+            )}
+            <p className="path-explanation">{pathResult.message}</p>
+            {pathResult.length > 0 && (
+              <p className="route-review-note"><b>How to read this:</b> Follow the numbered links from start to destination. Solid observed records are source-backed; dashed inferred leads need independent corroboration.</p>
+            )}
             {pathResult.edges?.length > 0 && (
-              <ul style={{ margin: '6px 0 0', paddingLeft: '18px' }}>
+              <ol className="path-steps">
                 {pathResult.edges.map((e: Item, idx: number) => (
                   <li key={e.id}>
-                    Step {idx + 1}: {e.source_entity_name || e.source_entity_id} ──[{e.relationship_type}]──▸{' '}
-                    {e.target_entity_name || e.target_entity_id} ({e.relationship_origin}, {Math.round(e.confidence * 100)}%)
+                    <div>
+                      <strong>{e.source_entity_name || e.source_entity_id}</strong>
+                      <span className="path-link">{e.relationship_type.replaceAll('_', ' ')} · {Math.round(e.confidence * 100)}% confidence</span>
+                      <strong>{e.target_entity_name || e.target_entity_id}</strong>
+                    </div>
+                    <small>{e.relationship_origin === 'OBSERVED' ? 'Observed record' : 'Inferred lead requiring verification'}</small>
                   </li>
                 ))}
-              </ul>
+              </ol>
             )}
           </div>
         )}
@@ -862,15 +1130,32 @@ function GraphView({
         graph={graph}
         onSelect={setSelectedItem}
         highlightEdgeIds={pathResult?.edge_ids || []}
+        highlightNodeIds={pathNodeIds}
         filterType={filterType}
         minConfidence={minConf}
       />
 
       {selectedItem && (
-        <div className="notice" style={{ marginTop: '16px' }}>
-          <b>Selected:</b> {selectedItem.canonical_name || `${selectedItem.source_entity_name || 'Entity'} → ${selectedItem.target_entity_name || 'Target'} (${selectedItem.relationship_type})`}
-          &nbsp;· Inspect in <b>Case Workspace</b> for full evidence panel.
-        </div>
+        <article className="network-selection" aria-live="polite">
+          <div className="network-selection-header">
+            <div>
+              <span className="eyebrow">SELECTED EVIDENCE</span>
+              <h2>{selectedItem.canonical_name || `${selectedItem.source_entity_name || 'Entity'} → ${selectedItem.target_entity_name || 'Target'}`}</h2>
+            </div>
+            <Badge kind="neutral">{selectedItem.entity_type || selectedItem.relationship_type}</Badge>
+          </div>
+          {selectedItem.relationship_type ? (
+            <p>
+              This relationship is a <b>{selectedItem.relationship_type.replaceAll('_', ' ').toLowerCase()}</b> record with {Math.round((selectedItem.confidence || 0) * 100)}% confidence. It is {selectedItem.relationship_origin === 'OBSERVED' ? 'directly observed in the source records.' : 'an inferred lead and needs independent verification.'}
+            </p>
+          ) : (
+            <p>This entity is part of the case network. Open <b>Case Workspace</b> for its full evidence snapshot and connected records.</p>
+          )}
+          <div className="network-selection-actions">
+            <span className="muted">Use the path finder above to compare this entity with another one.</span>
+            <button className="btn-secondary btn-small" onClick={() => setSelectedItem(null)}>Clear selection</button>
+          </div>
+        </article>
       )}
     </>
   );
@@ -1234,6 +1519,11 @@ function TimelineView({
 // -------------------------------------------------------------
 function Analytics({ summary }: { summary: Item }) {
   const temporal = summary.temporal_activity || [];
+  const totalEvents = temporal.reduce((total: number, item: Item) => total + Number(item.count || 0), 0);
+  const peakActivity = temporal.reduce((peak: Item | null, item: Item) => (
+    !peak || Number(item.count || 0) > Number(peak.count || 0) ? item : peak
+  ), null);
+  const topLead = summary.top_connections?.[0];
 
   return (
     <>
@@ -1245,29 +1535,49 @@ function Analytics({ summary }: { summary: Item }) {
         </div>
       </header>
 
+      <section className="analytics-purpose" aria-label="Analytics interpretation">
+        <div>
+          <span className="eyebrow">WHAT THIS SCREEN SHOWS</span>
+          <h2>When activity happened and why a lead is surfaced</h2>
+          <p>Use the activity bars to find dates that deserve source-document review. Use the priority breakdown to understand which evidence signals contributed to a lead. Neither view proves identity, intent, or guilt.</p>
+        </div>
+        <div className="analytics-callouts">
+          <div><strong>{totalEvents}</strong><span>timestamped records</span></div>
+          <div><strong>{peakActivity ? peakActivity.date : '—'}</strong><span>peak activity date</span></div>
+          <div><strong>{topLead?.name || '—'}</strong><span>top review lead</span></div>
+        </div>
+      </section>
+
       <section className="grid two">
         <article>
           <div className="section-title">
-            <h2>Real Temporal Activity Stream</h2>
-            <span>Aggregated by date</span>
+            <div>
+              <h2>Evidence Activity by Date</h2>
+              <p className="chart-subtitle">Taller bar = more timestamped relationship records on that date</p>
+            </div>
+            <span>{totalEvents} records</span>
           </div>
           <div className="bars">
             {temporal.map((x: Item) => (
-              <div key={x.date}>
+              <div key={x.date} title={`${x.date}: ${x.count} timestamped record${x.count === 1 ? '' : 's'}`}>
+                <b>{x.count}</b>
                 <i style={{ height: Math.min(180, x.count * 8) + 'px' }}></i>
                 <small>{x.date.slice(5)}</small>
               </div>
             ))}
           </div>
           <p className="muted" style={{ fontSize: '11px', marginTop: '10px' }}>
-            Computed from timestamped synthetic relationship records in this case scope.
+            Start with the peak date, then open the Timeline and source documents to verify what happened and whether multiple records describe the same activity.
           </p>
         </article>
 
         <article>
           <div className="section-title">
-            <h2>Priority Score Decomposition</h2>
-            <span>Explainable weighting</span>
+            <div>
+              <h2>Why a Lead Is Prioritized</h2>
+              <p className="chart-subtitle">Review signal contribution, not a guilt score</p>
+            </div>
+            <span>100% total</span>
           </div>
           <dl className="score">
             <dt>Network Position (30%)</dt>
@@ -1282,7 +1592,7 @@ function Analytics({ summary }: { summary: Item }) {
             <dd>Penalty for unverified identities or open data-quality gaps</dd>
           </dl>
           <div className="recommend" style={{ marginTop: '14px', fontSize: '11px' }}>
-            {summary.methodology || 'Multi-component investigation priority cues.'}
+            <b>Investigator use:</b> A high priority means the records deserve structured review first. Check the supporting relationships, confidence, open data gaps, and original documents before taking action.
           </div>
         </article>
       </section>
