@@ -558,6 +558,18 @@ function GraphComponent({
   const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.25);
   const handleZoomOut = () => cyRef.current?.zoom(Math.max(cyRef.current.minZoom(), cyRef.current.zoom() * 0.8));
   const handleFit = () => fitGraphToViewport(cyRef.current);
+  const handleGraphWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    const currentZoom = cy.zoom();
+    const nextZoom = Math.min(
+      cy.maxZoom(),
+      Math.max(cy.minZoom(), currentZoom * (event.deltaY > 0 ? 0.9 : 1.1)),
+    );
+    if (nextZoom === currentZoom) return;
+    event.preventDefault();
+    cy.zoom(nextZoom);
+  };
 
   return (
     <section className="graph-layout" aria-label="Case relationship graph">
@@ -587,26 +599,28 @@ function GraphComponent({
           </div>
         </div>
 
-        <CytoscapeComponent
-          elements={els}
-          style={{ width: '100%', height: '520px', background: '#09111d' }}
-          layout={{ name: 'cose', animate: false }}
-          cy={(cy: any) => {
-            cyRef.current = cy;
-            cy.removeAllListeners();
-            cy.autoungrabify(true);
-            cy.panningEnabled(true);
-            cy.minZoom(0.1);
-            cy.on('layoutstop', () => fitGraphToViewport(cy));
-            cy.on('pan', () => keepGraphInFrame(cy));
-            cy.on('dragfree', 'node', () => keepGraphInFrame(cy));
-            cy.on('zoom', () => keepGraphInFrame(cy));
-            cy.on('tap', 'node, edge', (evt: any) => {
-              onSelect(evt.target.data('raw'));
-            });
-            requestAnimationFrame(() => fitGraphToViewport(cy));
-          }}
-          stylesheet={[
+        <div className="graph-viewport" onWheel={handleGraphWheel}>
+          <CytoscapeComponent
+            elements={els}
+            style={{ width: '100%', height: '520px', background: '#09111d' }}
+            layout={{ name: 'cose', animate: false }}
+            cy={(cy: any) => {
+              cyRef.current = cy;
+              cy.removeAllListeners();
+              cy.autoungrabify(true);
+              cy.panningEnabled(true);
+              cy.userZoomingEnabled(false);
+              cy.minZoom(0.1);
+              cy.on('layoutstop', () => fitGraphToViewport(cy));
+              cy.on('pan', () => keepGraphInFrame(cy));
+              cy.on('dragfree', 'node', () => keepGraphInFrame(cy));
+              cy.on('zoom', () => keepGraphInFrame(cy));
+              cy.on('tap', 'node, edge', (evt: any) => {
+                onSelect(evt.target.data('raw'));
+              });
+              requestAnimationFrame(() => fitGraphToViewport(cy));
+            }}
+            stylesheet={[
             {
               selector: 'node',
               style: {
@@ -683,6 +697,7 @@ function GraphComponent({
             },
           ]}
         />
+        </div>
 
         {searchSummary && (
           <div className="graph-search-summary" aria-live="polite">
