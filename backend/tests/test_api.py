@@ -10,8 +10,9 @@ def test_health_and_login():
     assert client.get("/api/health").status_code==200
     assert login().status_code==200
 def test_passwordless_demo_login():
-    reply=client.post("/api/auth/demo-login")
-    assert reply.status_code==200 and reply.json()["user"]["role"]=="ADMIN"
+    for email, role in [("admin@example.com", "ADMIN"), ("supervisor@example.com", "SUPERVISOR"), ("investigator@example.com", "INVESTIGATOR"), ("analyst@example.com", "ANALYST"), ("viewer@example.com", "VIEWER")]:
+        reply=client.post("/api/auth/demo-login",json={"email":email})
+        assert reply.status_code==200 and reply.json()["user"]["role"]==role
 def test_protected_case_graph_and_copilot():
     t=login().json()["access_token"];h={"Authorization":f"Bearer {t}"}; cases=client.get("/api/cases",headers=h).json(); assert cases
     cid=cases[0]["id"]; assert client.get(f"/api/cases/{cid}/graph",headers=h).json()["nodes"]

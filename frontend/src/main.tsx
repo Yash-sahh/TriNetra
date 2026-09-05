@@ -108,8 +108,8 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (email === 'admin@example.com') {
-      await enterDemo();
+    if (DEMO_ACCOUNTS.some((acc) => acc.email === email)) {
+      await enterDemo(email);
       return;
     }
     setBusy(true);
@@ -127,11 +127,14 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
     }
   };
 
-  const enterDemo = async () => {
+  const enterDemo = async (demoEmail: string) => {
     setBusy(true);
     setErr('');
     try {
-      const res = await api('/auth/demo-login', undefined, { method: 'POST' });
+      const res = await api('/auth/demo-login', undefined, {
+        method: 'POST',
+        body: JSON.stringify({ email: demoEmail }),
+      });
       onLogin(res);
     } catch (e: any) {
       setErr(e.message);

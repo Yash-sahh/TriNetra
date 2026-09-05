@@ -543,6 +543,9 @@ class Login(BaseModel):
     email: str
     password: str
 
+class DemoLogin(BaseModel):
+    email: str
+
 class CaseIn(BaseModel):
     title: str = Field(min_length=3, max_length=160)
     description: str = Field(min_length=3, max_length=2000)
@@ -647,13 +650,17 @@ def login(body: Login, request: Request, s: Session = Depends(db)):
     return {"access_token": token(u), "token_type": "bearer", "user": public(u)}
 
 @app.post("/api/auth/demo-login")
-def demo_login(request: Request, s: Session = Depends(db)):
+def demo_login(body: DemoLogin, request: Request, s: Session = Depends(db)):
     """Provide passwordless access to the intentionally public synthetic demo."""
     if os.getenv("DEMO_AUTH_ENABLED", "true").lower() != "true":
         raise HTTPException(403, "Demo access is disabled.")
     host = request.client.host if request.client else "demo"
     rate_limit("demo-login", host, 20)
-    u = s.scalar(select(User).where(User.email == "admin@example.com"))
+    demo_emails = {"admin@example.com", "supervisor@example.com", "investigator@example.com", "analyst@example.com", "viewer@example.com"}
+    email = body.email.lower().strip()
+    if email not in demo_emails:
+        raise HTTPException(403, "Only predefined synthetic demo roles can use passwordless access.")
+    u = s.scalar(select(User).where(User.email == email))
     if not u or not u.active:
         raise HTTPException(503, "Demo account is unavailable.")
     audit(s, u, "DEMO_LOGIN", "Session", u.id, {"synthetic": True})
