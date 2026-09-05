@@ -439,6 +439,7 @@ function GraphComponent({
   minConfidence?: number;
 }) {
   const [query, setQuery] = useState('');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const cyRef = useRef<any>(null);
   const panGuardRef = useRef(false);
 
@@ -447,6 +448,7 @@ function GraphComponent({
     const allEdges = graph.edges || [];
     const idKey = (value: any) => String(value);
     const normalizedQuery = query.trim().toLowerCase();
+    const selectedId = selectedNodeId ? idKey(selectedNodeId) : null;
     const matchingIds = new Set<string>(allNodes
       .filter((n: Item) => {
         const matchesQuery = !normalizedQuery || n.canonical_name.toLowerCase().includes(normalizedQuery);
@@ -461,6 +463,16 @@ function GraphComponent({
         const targetId = idKey(e.target_entity_id);
         if (matchingIds.has(sourceId)) visibleIds.add(targetId);
         if (matchingIds.has(targetId)) visibleIds.add(sourceId);
+      });
+    }
+    if (selectedId) {
+      visibleIds.clear();
+      visibleIds.add(selectedId);
+      allEdges.forEach((e: Item) => {
+        const sourceId = idKey(e.source_entity_id);
+        const targetId = idKey(e.target_entity_id);
+        if (sourceId === selectedId) visibleIds.add(targetId);
+        if (targetId === selectedId) visibleIds.add(sourceId);
       });
     }
 
@@ -498,7 +510,7 @@ function GraphComponent({
       }));
 
     return [...nodes, ...edges];
-  }, [graph, query, filterType, minConfidence, highlightEdgeIds]);
+  }, [graph, query, filterType, minConfidence, highlightEdgeIds, selectedNodeId]);
 
   const searchSummary = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -603,7 +615,15 @@ function GraphComponent({
           <CytoscapeComponent
             elements={els}
             style={{ width: '100%', height: '520px', background: '#09111d' }}
-            layout={{ name: 'cose', animate: false }}
+            layout={{
+              name: 'cose',
+              animate: false,
+              fit: true,
+              padding: 54,
+              idealEdgeLength: 120,
+              nodeRepulsion: 7000,
+              gravity: 0.35,
+            }}
             cy={(cy: any) => {
               cyRef.current = cy;
               cy.removeAllListeners();
@@ -616,7 +636,14 @@ function GraphComponent({
               cy.on('dragfree', 'node', () => keepGraphInFrame(cy));
               cy.on('zoom', () => keepGraphInFrame(cy));
               cy.on('tap', 'node, edge', (evt: any) => {
+                if (evt.target.isNode()) {
+                  const clickedId = String(evt.target.id());
+                  setSelectedNodeId((current) => current === clickedId ? null : clickedId);
+                }
                 onSelect(evt.target.data('raw'));
+              });
+              cy.on('tap', (evt: any) => {
+                if (evt.target === cy) setSelectedNodeId(null);
               });
               requestAnimationFrame(() => fitGraphToViewport(cy));
             }}
@@ -625,27 +652,27 @@ function GraphComponent({
               selector: 'node',
               style: {
                 label: 'data(label)',
-                'font-size': '10px',
+                'font-size': '9px',
                 'background-color': '#3b82f6',
                 color: '#e7efff',
                 'text-outline-color': '#080e18',
                 'text-outline-width': 2,
-                width: 36,
-                height: 36,
-                'border-width': 2,
+                width: 28,
+                height: 28,
+                'border-width': 1.5,
                 'border-color': '#bfe9ff',
                 'text-wrap': 'wrap',
-                'text-max-width': 100,
+                'text-max-width': 80,
               },
             },
             {
               selector: 'node[?isSearchMatch]',
               style: {
-                width: 48,
-                height: 48,
-                'border-width': 4,
+                width: 36,
+                height: 36,
+                'border-width': 3,
                 'border-color': '#ffffff',
-                'font-size': '11px',
+                'font-size': '10px',
                 'z-index': 20,
               },
             },
@@ -672,7 +699,7 @@ function GraphComponent({
                 'target-arrow-shape': 'triangle',
                 'curve-style': 'bezier',
                 label: 'data(label)',
-                'font-size': '7px',
+                'font-size': '6px',
                 color: '#8ba2be',
               },
             },
