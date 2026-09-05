@@ -593,7 +593,10 @@ function GraphComponent({
               aria-label="Filter graph entities"
               placeholder="Search entity name..."
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setSelectedNodeId(null);
+              }}
             />
             {query && <span className="search-hint">Matches + direct connections</span>}
           </div>
