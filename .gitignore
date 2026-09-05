@@ -1,7 +1,20 @@
 backend/.venv/
-backend/*.db
+.venv/
+
+# Python-generated files and local databases
+__pycache__/
+*.py[cod]
+*.db
+.pytest_cache/
+
+# Runtime uploads
+uploads/
 backend/uploads/
+
+# Frontend dependencies and build output
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# Local environment variables
 .env
-.pytest_cache/

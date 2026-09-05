@@ -1,4 +1,0 @@
-date,from_account,to_account,amount,transaction_type,remarks
-2026-01-05,Rahul Sharma,Amit Kumar,50000,IMPS,Loan repayment
-2026-01-08,Amit Kumar,Imran,45000,NEFT,Payment
-2026-01-10,Imran,Rahul Sharma,40000,UPI,Settlement
