@@ -102,25 +102,12 @@ function Stat({ label, value, sub }: { label: string; value: any; sub: string })
 // -------------------------------------------------------------
 function Login({ onLogin }: { onLogin: (x: any) => void }) {
   const [email, setEmail] = useState('admin@example.com');
-  const [password, setPassword] = useState('TriNetraDemo!2026');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    setBusy(true);
-    setErr('');
-    try {
-      const res = await api('/auth/login', undefined, {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
-      onLogin(res);
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setBusy(false);
-    }
+    await enterDemo();
   };
 
   const enterDemo = async () => {
@@ -136,11 +123,6 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
     }
   };
 
-  const pickDemo = (acc: (typeof DEMO_ACCOUNTS)[0]) => {
-    setEmail(acc.email);
-    setPassword('TriNetraDemo!2026');
-  };
-
   return (
     <main className="login">
       <section className="login-card">
@@ -153,38 +135,19 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
         </div>
         <Badge kind="demo">DEMO DATA — SYNTHETIC ENVIRONMENT</Badge>
         <h2>Authorized investigator sign in</h2>
-        <button type="button" onClick={enterDemo} disabled={busy}>
-          {busy ? 'Opening demo workspace…' : 'Continue without password'}
-        </button>
-        <p className="muted" style={{ fontSize: '11px', marginTop: '8px' }}>
-          Public access is limited to synthetic demo data and the Administrator demo role.
-        </p>
-        <div className="login-divider"><span>or use an account</span></div>
         <form onSubmit={submit}>
           <label>
             Investigator Email
-            <input value={email} type="email" onChange={(e) => setEmail(e.target.value)} required />
-          </label>
-          <label>
-            Password
-            <input value={password} type="password" onChange={(e) => setPassword(e.target.value)} required />
+            <input value={email} type="email" onChange={(e) => setEmail(e.target.value)} required readOnly />
           </label>
           {err && <p className="error">{err}</p>}
           <button disabled={busy} type="submit">
-            {busy ? 'Verifying credentials…' : 'Sign in securely'}
+            {busy ? 'Opening demo workspace…' : 'Sign in securely'}
           </button>
         </form>
 
-        <p className="muted" style={{ marginTop: '16px' }}>Quick-select demo role credentials:</p>
-        <div className="demo-account-pills">
-          {DEMO_ACCOUNTS.map((acc) => (
-            <button key={acc.email} type="button" onClick={() => pickDemo(acc)}>
-              {acc.name} ({acc.role})
-            </button>
-          ))}
-        </div>
         <p className="muted" style={{ fontSize: '11px', marginTop: '10px' }}>
-          Password: <code>TriNetraDemo!2026</code>. All records are entirely synthetic.
+          All records are entirely synthetic.
         </p>
       </section>
     </main>
