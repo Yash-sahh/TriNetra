@@ -663,6 +663,7 @@ function GraphComponent({
               cyInitializedRef.current = cy;
               cy.autoungrabify(true);
               cy.panningEnabled(true);
+              cy.userPanningEnabled(true);
               cy.userZoomingEnabled(false);
               cy.minZoom(0.1);
               cy.maxZoom(2.5);

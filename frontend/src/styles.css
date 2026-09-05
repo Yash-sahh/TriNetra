@@ -463,6 +463,15 @@ article {
   position: relative;
 }
 
+.graph-viewport {
+  cursor: grab;
+  touch-action: none;
+}
+
+.graph-viewport:active {
+  cursor: grabbing;
+}
+
 .toolbar {
   display: flex;
   justify-content: space-between;
