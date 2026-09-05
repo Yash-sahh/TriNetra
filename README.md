@@ -27,17 +27,17 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) (development) or [http://localhost:8000](http://localhost:8000) (when frontend is built). API documentation is at [http://localhost:8000/docs](http://localhost:8000/docs) and health check is at [http://localhost:8000/api/health](http://localhost:8000/api/health).
 
-### Deploy Backend to Railway and Frontend to Vercel
+### Deploy Backend to Render Free and Frontend to Vercel
 
-The repository includes [railway.toml](railway.toml), [frontend/vercel.json](frontend/vercel.json), and [frontend/.env.example](frontend/.env.example) for this deployment shape.
+The repository includes [render.yaml](render.yaml), [frontend/vercel.json](frontend/vercel.json), and [frontend/.env.example](frontend/.env.example) for this deployment shape.
 
-1. In Railway, create a new project from this GitHub repository. Railway will use [railway.toml](railway.toml) to install `backend/requirements.txt`, start FastAPI, and health-check `/api/health`.
-2. Set Railway variables `JWT_SECRET` to a long random value, `DEMO_PASSWORD` to a non-default password, `DATABASE_MODE=sqlite`, `GRAPH_MODE=local`, and `CORS_ORIGINS=http://localhost:5173` while testing.
-3. Copy the deployed Railway URL, for example `https://trinetra-production.up.railway.app`, and set the Vercel environment variable `VITE_API_URL` to `https://trinetra-production.up.railway.app/api`.
+1. In Render, choose **New → Blueprint** and connect this GitHub repository. Render will use [render.yaml](render.yaml) to install dependencies, start FastAPI, and health-check `/api/health`.
+2. Keep the backend as a **Free Web Service** and set `DEMO_PASSWORD` to a non-default password. `JWT_SECRET`, `DATABASE_MODE=sqlite`, and `GRAPH_MODE=local` are configured by the blueprint. Set `CORS_ORIGINS=http://localhost:5173` while testing.
+3. Copy the deployed Render URL, for example `https://trinetra-backend.onrender.com`, and set the Vercel environment variable `VITE_API_URL` to `https://trinetra-backend.onrender.com/api`.
 4. In Vercel, import this repository, set the root directory to `frontend`, keep build command `npm run build`, and set output directory to `dist`. Redeploy.
-5. Replace Railway `CORS_ORIGINS` with the final Vercel URL, for example `https://trinetra.vercel.app`, then redeploy the backend.
+5. Replace Render `CORS_ORIGINS` with the final Vercel URL, for example `https://trinetra.vercel.app`, then redeploy the backend.
 
-The default Railway deployment uses SQLite and local uploads for a demo. Railway service storage should not be treated as durable application storage, so use PostgreSQL and persistent object storage before relying on this deployment for data that must survive restarts.
+Render's free web service sleeps after inactivity and its local filesystem is ephemeral. This setup is suitable for a free demo; SQLite data and uploads can reset after restarts or redeploys. Use managed PostgreSQL and persistent object storage when data must survive.
 
 ### Docker Runtime (Optional)
 
