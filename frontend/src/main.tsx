@@ -442,6 +442,16 @@ function GraphComponent({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const cyRef = useRef<any>(null);
   const panGuardRef = useRef(false);
+  const cyInitializedRef = useRef<any>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  useEffect(() => () => {
+    resizeObserverRef.current?.disconnect();
+    if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current);
+  }, []);
 
   const els = useMemo(() => {
     const allNodes = graph.nodes || [];
@@ -562,10 +572,20 @@ function GraphComponent({
 
   const fitGraphToViewport = (cy: any) => {
     if (!cy || !cy.elements().length) return;
+    cy.minZoom(0.1);
+    cy.maxZoom(2.5);
     cy.fit(cy.elements(), 44);
-    cy.minZoom(cy.zoom());
-    keepGraphInFrame(cy);
   };
+
+  const layoutOptions = useMemo(() => ({
+    name: 'cose',
+    animate: false,
+    fit: true,
+    padding: 54,
+    idealEdgeLength: 120,
+    nodeRepulsion: 7000,
+    gravity: 0.35,
+  }), []);
 
   const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.25);
   const handleZoomOut = () => cyRef.current?.zoom(Math.max(cyRef.current.minZoom(), cyRef.current.zoom() * 0.8));
@@ -618,37 +638,38 @@ function GraphComponent({
           <CytoscapeComponent
             elements={els}
             style={{ width: '100%', height: '520px', background: '#09111d' }}
-            layout={{
-              name: 'cose',
-              animate: false,
-              fit: true,
-              padding: 54,
-              idealEdgeLength: 120,
-              nodeRepulsion: 7000,
-              gravity: 0.35,
-            }}
+            layout={layoutOptions}
             cy={(cy: any) => {
               cyRef.current = cy;
-              cy.removeAllListeners();
+              if (cyInitializedRef.current === cy) return;
+              cyInitializedRef.current = cy;
               cy.autoungrabify(true);
               cy.panningEnabled(true);
               cy.userZoomingEnabled(false);
               cy.minZoom(0.1);
+              cy.maxZoom(2.5);
               cy.on('layoutstop', () => fitGraphToViewport(cy));
-              cy.on('pan', () => keepGraphInFrame(cy));
-              cy.on('dragfree', 'node', () => keepGraphInFrame(cy));
-              cy.on('zoom', () => keepGraphInFrame(cy));
               cy.on('tap', 'node, edge', (evt: any) => {
                 if (evt.target.isNode()) {
                   const clickedId = String(evt.target.id());
                   setSelectedNodeId((current) => current === clickedId ? null : clickedId);
                 }
-                onSelect(evt.target.data('raw'));
+                onSelectRef.current(evt.target.data('raw'));
               });
               cy.on('tap', (evt: any) => {
                 if (evt.target === cy) setSelectedNodeId(null);
               });
               requestAnimationFrame(() => fitGraphToViewport(cy));
+
+              resizeObserverRef.current?.disconnect();
+              resizeObserverRef.current = new ResizeObserver(() => {
+                if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current);
+                resizeFrameRef.current = requestAnimationFrame(() => {
+                  resizeFrameRef.current = null;
+                  cy.resize();
+                });
+              });
+              resizeObserverRef.current.observe(cy.container());
             }}
             stylesheet={[
             {
@@ -666,6 +687,7 @@ function GraphComponent({
                 'border-color': '#bfe9ff',
                 'text-wrap': 'wrap',
                 'text-max-width': 62,
+                'text-valign': 'center',
               },
             },
             {
@@ -704,6 +726,17 @@ function GraphComponent({
                 label: 'data(label)',
                 'font-size': '6px',
                 color: '#8ba2be',
+                'text-rotation': 'autorotate',
+                'text-halign': 'center',
+                'text-valign': 'center',
+                'text-wrap': 'ellipsis',
+                'text-max-width': 86,
+                'text-background-color': '#0b1727',
+                'text-background-opacity': 0.9,
+                'text-background-padding': 2,
+                'text-border-width': 1,
+                'text-border-color': '#223b58',
+                'text-border-opacity': 0.7,
               },
             },
             {
