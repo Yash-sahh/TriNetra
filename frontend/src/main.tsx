@@ -578,14 +578,32 @@ function GraphComponent({
   };
 
   const layoutOptions = useMemo(() => ({
-    name: 'cose',
+    name: selectedNodeId ? 'concentric' : 'cose',
     animate: false,
     fit: true,
     padding: 54,
     idealEdgeLength: 120,
-    nodeRepulsion: 7000,
+    nodeRepulsion: selectedNodeId ? 14000 : 7000,
     gravity: 0.35,
-  }), []);
+    concentric: selectedNodeId
+      ? (node: any) => node.data('id') === String(selectedNodeId) ? 2 : 1
+      : undefined,
+    levelWidth: () => 1,
+    minNodeSpacing: selectedNodeId ? 90 : 30,
+  }), [selectedNodeId]);
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !els.length) return;
+    const focusedLayout = cy.layout({
+      ...layoutOptions,
+      fit: false,
+      padding: selectedNodeId ? 90 : 54,
+    });
+    focusedLayout.one('layoutstop', () => fitGraphToViewport(cy));
+    focusedLayout.run();
+    return () => focusedLayout.stop();
+  }, [els, layoutOptions, selectedNodeId]);
 
   const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.25);
   const handleZoomOut = () => cyRef.current?.zoom(Math.max(cyRef.current.minZoom(), cyRef.current.zoom() * 0.8));
@@ -638,7 +656,7 @@ function GraphComponent({
           <CytoscapeComponent
             elements={els}
             style={{ width: '100%', height: '520px', background: '#09111d' }}
-            layout={layoutOptions}
+            layout={{ name: 'preset', fit: false }}
             cy={(cy: any) => {
               cyRef.current = cy;
               if (cyInitializedRef.current === cy) return;
@@ -648,7 +666,6 @@ function GraphComponent({
               cy.userZoomingEnabled(false);
               cy.minZoom(0.1);
               cy.maxZoom(2.5);
-              cy.on('layoutstop', () => fitGraphToViewport(cy));
               cy.on('tap', 'node, edge', (evt: any) => {
                 if (evt.target.isNode()) {
                   const clickedId = String(evt.target.id());
@@ -659,7 +676,6 @@ function GraphComponent({
               cy.on('tap', (evt: any) => {
                 if (evt.target === cy) setSelectedNodeId(null);
               });
-              requestAnimationFrame(() => fitGraphToViewport(cy));
 
               resizeObserverRef.current?.disconnect();
               resizeObserverRef.current = new ResizeObserver(() => {
