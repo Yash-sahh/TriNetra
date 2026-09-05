@@ -102,12 +102,29 @@ function Stat({ label, value, sub }: { label: string; value: any; sub: string })
 // -------------------------------------------------------------
 function Login({ onLogin }: { onLogin: (x: any) => void }) {
   const [email, setEmail] = useState('admin@example.com');
+  const [password, setPassword] = useState('TriNetraDemo!2026');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    await enterDemo();
+    if (email === 'admin@example.com') {
+      await enterDemo();
+      return;
+    }
+    setBusy(true);
+    setErr('');
+    try {
+      const res = await api('/auth/login', undefined, {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+      onLogin(res);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   const enterDemo = async () => {
@@ -121,6 +138,11 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const pickDemo = (acc: (typeof DEMO_ACCOUNTS)[0]) => {
+    setEmail(acc.email);
+    setPassword('TriNetraDemo!2026');
   };
 
   return (
@@ -138,16 +160,28 @@ function Login({ onLogin }: { onLogin: (x: any) => void }) {
         <form onSubmit={submit}>
           <label>
             Investigator Email
-            <input value={email} type="email" onChange={(e) => setEmail(e.target.value)} required readOnly />
+            <input value={email} type="email" onChange={(e) => setEmail(e.target.value)} required />
+          </label>
+          <label>
+            Password
+            <input value={password} type="password" onChange={(e) => setPassword(e.target.value)} required />
           </label>
           {err && <p className="error">{err}</p>}
           <button disabled={busy} type="submit">
-            {busy ? 'Opening demo workspace…' : 'Sign in securely'}
+            {busy ? 'Verifying credentials…' : 'Sign in securely'}
           </button>
         </form>
 
+        <p className="muted" style={{ marginTop: '16px' }}>Quick-select demo role credentials:</p>
+        <div className="demo-account-pills">
+          {DEMO_ACCOUNTS.map((acc) => (
+            <button key={acc.email} type="button" onClick={() => pickDemo(acc)}>
+              {acc.name} ({acc.role})
+            </button>
+          ))}
+        </div>
         <p className="muted" style={{ fontSize: '11px', marginTop: '10px' }}>
-          All records are entirely synthetic.
+          Password: <code>TriNetraDemo!2026</code>. All records are entirely synthetic.
         </p>
       </section>
     </main>
@@ -2085,13 +2119,7 @@ function AuditView({ token, userRole, addToast }: { token: string; userRole: str
 // MAIN APP COMPONENT
 // -------------------------------------------------------------
 export function App() {
-  const [auth, setAuth] = useState<any>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('trinetra-auth') || 'null');
-    } catch {
-      return null;
-    }
-  });
+  const [auth, setAuth] = useState<any>(null);
 
   const [page, setPage] = useState('overview');
   const [casesList, setCasesList] = useState<Item[]>([]);
@@ -2180,7 +2208,6 @@ export function App() {
     return (
       <Login
         onLogin={(x) => {
-          localStorage.setItem('trinetra-auth', JSON.stringify(x));
           setAuth(x);
         }}
       />
@@ -2204,7 +2231,6 @@ export function App() {
         method: 'POST',
         body: JSON.stringify({ email, password: 'TriNetraDemo!2026' }),
       });
-      localStorage.setItem('trinetra-auth', JSON.stringify(res));
       setAuth(res);
       addToast(`Switched account to: ${res.user?.name} (${res.user?.role})`, 'success');
     } catch (e: any) {
